@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompt-Bill - Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="brand">
+      <h1>Prompt-Bill</h1>
+      <span class="badge-sub">Tenant Accounting Dashboard</span>
+    </div>
+
+    <!-- Active Tenant Identifier -->
+    <div id="tenant-display" style="display: none; align-items: center; gap: 8px;">
+      <span style="color: var(--text-muted); font-size: 12px;">Tenant:</span>
+      <code id="tenant-id-val" class="mono" style="color: var(--accent); font-weight: 600;">&mdash;</code>
+      <button onclick="clearKey()" style="padding: 4px 8px; font-size: 11px;">Change Key</button>
+    </div>
+  </header>
+
+  <div class="controls-bar">
+    <div class="control-group" id="auth-group">
+      <label for="api-key-input">Tracker API Key:</label>
+      <input type="password" id="api-key-input" placeholder="trk_live_..." autocomplete="off">
+      <button class="primary" onclick="applyKey()">Connect</button>
+    </div>
+
+    <div class="control-group">
+      <label>Date Range:</label>
+      <div class="btn-group">
+        <button id="btn-today" onclick="setDatePreset('today')">Today</button>
+        <button id="btn-7d" onclick="setDatePreset('7d')">7D</button>
+        <button id="btn-30d" class="active" onclick="setDatePreset('30d')">30D</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label for="date-from">From (UTC):</label>
+      <input type="date" id="date-from" style="min-width: 130px;">
+      <label for="date-to">To (UTC):</label>
+      <input type="date" id="date-to" style="min-width: 130px;">
+      <button onclick="loadAllMetrics()">Apply Filter</button>
+    </div>
+  </div>
+
+  <!-- Notification & State Banners -->
+  <div id="loading-banner" class="banner loading" style="display: none;">
+    <span>Fetching live usage and accounting data from reporting API...</span>
+  </div>
+
+  <div id="error-banner" class="banner error" style="display: none;">
+    <span id="error-message">Failed to load data.</span>
+    <button onclick="loadAllMetrics()">Retry</button>
+  </div>
+
+  <div id="uncertainty-banner" class="banner warning" style="display: none;">
+    <span id="uncertainty-text">&#9888;&#65039; Caution: Unpriced or incomplete usage detected. Estimates may be lower than actual usage.</span>
+  </div>
+
+  <!-- KPI Summary Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-title">
+        <span>Estimated Cost (USD)</span>
+        <span id="badge-pricing" class="badge success">Complete</span>
+      </div>
+      <div class="kpi-value" id="kpi-cost">$0.000000</div>
+      <div class="kpi-sub">
+        <span>Fixed-point: <code id="kpi-microdollars" class="mono">0</code> &micro;$</span>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-title">
+        <span>Total Requests</span>
+        <span class="badge neutral" id="kpi-success-rate">&mdash;</span>
+      </div>
+      <div class="kpi-value" id="kpi-requests">0</div>
+      <div class="kpi-sub">
+        <span style="color: var(--green);" id="kpi-req-success">0 2xx</span>
+        <span>&bull;</span>
+        <span style="color: var(--red);" id="kpi-req-fail">0 4xx/5xx</span>
+      </div>
+    </div>
+
+    <!-- Token Breakdown -->
+    <div class="kpi-card">
+      <div class="kpi-title">
+        <span>Tokens Billed</span>
+        <span class="badge neutral" id="kpi-cached-ratio">&mdash;</span>
+      </div>
+      <div class="kpi-value" id="kpi-tokens">0</div>
+      <div class="kpi-sub">
+        <span>In: <span id="kpi-tokens-in">0</span></span>
+        <span>&bull;</span>
+        <span>Out: <span id="kpi-tokens-out">0</span></span>
+        <span>&bull;</span>
+        <span>Cached: <span id="kpi-tokens-cache">0</span></span>
+      </div>
+    </div>
+
+    <!-- Latency Summary -->
+    <div class="kpi-card">
+      <div class="kpi-title">
+        <span>Latency Summary</span>
+        <span class="badge neutral">ms</span>
+      </div>
+      <div class="kpi-value" id="kpi-latency-avg">0 ms</div>
+      <div class="kpi-sub">
+        <span>P95: <span id="kpi-latency-p95">0</span> ms</span>
+        <span>&bull;</span>
+        <span>Min: <span id="kpi-latency-min">0</span> ms</span>
+        <span>&bull;</span>
+        <span>Max: <span id="kpi-latency-max">0</span> ms</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily Cost Trend Chart -->
+  <div class="section-card">
+    <div class="section-header">
+      <h2 class="section-title">Daily Cost Trend (UTC)</h2>
+      <span style="color: var(--text-muted); font-size: 12px;">Aggregated by UTC calendar day</span>
+    </div>
+    <div id="chart-container" class="chart-container">
+      <div class="empty-state">No daily usage recorded for this period.</div>
+    </div>
+  </div>
+
+  <!-- Model Breakdown and Top Spenders -->
+  <div class="two-col-grid">
+    <div class="section-card">
+      <div class="section-header">
+        <h2 class="section-title">Model Breakdown</h2>
+        <span style="color: var(--text-muted); font-size: 12px;">Aggregated by model identifier</span>
+      </div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Requests</th>
+              <th>Input Tokens</th>
+              <th>Output Tokens</th>
+              <th>Est. Cost</th>
+            </tr>
+          </thead>
+          <tbody id="models-table-body">
+            <tr><td colspan="5" class="empty-state">No model usage recorded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h2 class="section-title">Top Spenders Leaderboard</h2>
+          <div class="btn-group">
+            <button id="btn-spender-feature" class="active" onclick="setSpenderDimension('feature')">By Feature</button>
+            <button id="btn-spender-user" onclick="setSpenderDimension('user')">By User</button>
+          </div>
+        </div>
+        <span style="color: var(--text-muted); font-size: 12px;">Top 10 consumers by cost</span>
+      </div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th id="spender-col-title">Feature</th>
+              <th>Requests</th>
+              <th>Total Tokens</th>
+              <th>Est. Cost</th>
+            </tr>
+          </thead>
+          <tbody id="spenders-table-body">
+            <tr><td colspan="4" class="empty-state">No attribution recorded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-header">
+      <h2 class="section-title">Request Ledger Logs</h2>
+      <span style="color: var(--text-muted); font-size: 12px;">Zero-drift keyset cursor pagination</span>
+    </div>
+
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp (UTC)</th>
+            <th>ID</th>
+            <th>Attribution</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Stream</th>
+            <th>Latency</th>
+            <th>Tokens (In / Out / Cache)</th>
+            <th>Accounting Status</th>
+            <th>Estimated Cost</th>
+          </tr>
+        </thead>
+        <tbody id="requests-table-body">
+          <tr><td colspan="10" class="empty-state">No requests recorded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-bar">
+      <button id="btn-prev-page" onclick="loadPreviousRequestsPage()" disabled>&larr; Previous</button>
+      <span id="pagination-status" style="color: var(--text-muted); font-size: 12px;">Page 1</span>
+      <button id="btn-next-page" class="primary" onclick="loadNextRequestsPage()" disabled>Next Page &rarr;</button>
+    </div>
+  </div>
+</div>
+
+<script src="/dashboard/dashboard.js"></script>
+</body>
+</html>
