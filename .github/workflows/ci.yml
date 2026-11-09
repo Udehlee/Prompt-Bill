@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Code Quality & Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: tracker_dev
+          POSTGRES_USER: tracker
+          POSTGRES_PASSWORD: tracker_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tracker -d tracker_dev"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify Go module dependencies
+        run: go mod verify
+
+      - name: Check formatting with gofmt
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following files require gofmt formatting:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: Run static analysis with go vet
+        run: go vet ./...
+
+      - name: Run unit & PostgreSQL integration tests with race detector
+        env:
+          DATABASE_URL: postgres://tracker:tracker_dev_password@localhost:5432/tracker_dev?sslmode=disable
+        run: |
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Inspect test coverage summary
+        run: go tool cover -func=coverage.txt
+
+  docker:
+    name: Docker Build Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t llm-cost-tracker:test .
