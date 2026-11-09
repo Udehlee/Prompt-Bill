@@ -1,0 +1,53 @@
+﻿name: prompt-bill
+
+services:
+  prompt-bill:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: prompt-bill
+    container_name: prompt-bill
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "${PORT:-8080}"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tracker_dev}?sslmode=disable"
+      UPSTREAM_BASE_URL: "${UPSTREAM_BASE_URL:-https://api.groq.com/openai/v1}"
+      UPSTREAM_API_KEY: "${UPSTREAM_API_KEY:-}"
+      UPSTREAM_PROVIDER: "${UPSTREAM_PROVIDER:-groq}"
+      FALLBACK_BASE_URL: "${FALLBACK_BASE_URL:-}"
+      FALLBACK_API_KEY: "${FALLBACK_API_KEY:-}"
+      FALLBACK_MODEL: "${FALLBACK_MODEL:-}"
+      FALLBACK_PROVIDER: "${FALLBACK_PROVIDER:-}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/readyz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: prompt-bill-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tracker_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-tracker_dev}"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
