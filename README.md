@@ -55,7 +55,7 @@ The dashboard uses the authenticated tenant to retrieve its usage data from Post
 - Clone the repository.
   ```bash
   git clone https://github.com/Udehlee/Prompt-Bill.git
-    cd gyara
+    cd Prompt-Bill
     pnpm install
 
    ```
